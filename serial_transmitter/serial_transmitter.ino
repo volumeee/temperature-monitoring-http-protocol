@@ -1,68 +1,83 @@
 #include <WiFi.h>
-#include <HTTPClient.h>
+#include <Wire.h>
+#include <Adafruit_Sensor.h>
 #include <DHT.h>
+#include <HTTPClient.h>
 
-#define WIFI_SSID "your_wifi_ssid"
-#define WIFI_PASSWORD "your_wifi_password"
+#define DHTPIN 32
+#define DHTTYPE DHT11
 
-#define API_ENDPOINT "http://your_domain.com/path/to/api.php"
-#define API_KEY "tPmAT5Ab3j7F9"
+DHT dht(DHTPIN, DHTTYPE);
 
-#define DHT_PIN 4
-#define DHT_TYPE DHT11
+// Replace with your SSID and Password
+const char* ssid = "POCO";
+const char* password = "123456789";
 
-DHT dht(DHT_PIN, DHT_TYPE);
+// REPLACE with your Domain name and URL path or IP address with path
+const char* serverName = "https://iotbagos.000webhostapp.com/api.php";
+
+// Keep this API Key value to be compatible with the PHP code provided in the project page.
+// If you change the apiKeyValue value, the PHP file /post-esp-data.php also needs to have the same key
+String apiKeyValue = "tPmAT5Ab3j7F9";
+String sensorName = "DHT11";
+String sensorLocation = "My Room";
 
 void setup() {
   Serial.begin(115200);
 
-  // Connect to Wi-Fi
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  // Connect to WiFi
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+  WiFi.begin(ssid, password);
+  WiFi.setSleep(false);
+
   while (WiFi.status() != WL_CONNECTED) {
-    delay(1000);
-    Serial.println("Connecting to WiFi...");
+    delay(500);
+    Serial.print(".");
   }
-  Serial.println("Connected to WiFi");
+
+  Serial.println("");
+  Serial.print("Connected to WiFi network with IP Address: ");
+  Serial.println(WiFi.localIP());
 
   dht.begin();
 }
 
 void loop() {
-  // Read sensor data
-  float temperature = dht.readTemperature();
-  float humidity = dht.readHumidity();
+  // Check WiFi connection status
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
 
-  // Check if any reads failed
-  if (isnan(temperature) || isnan(humidity)) {
-    Serial.println("Failed to read data from DHT sensor");
-    return;
+    // Your Domain name with URL path or IP address with path
+    http.begin(serverName);
+
+    // Specify content-type header
+    http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+
+    // Prepare your HTTP POST request data
+    String httpRequestData = "api_key=" + apiKeyValue + "&sensor=" + sensorName + "&location=" + sensorLocation + "&value1=" + String(dht.readTemperature()) + "&value3=" + String(dht.readHumidity());
+    Serial.print("httpRequestData: ");
+    Serial.println(httpRequestData);
+
+    // Send HTTP POST request
+    int httpResponseCode = http.POST(httpRequestData);
+
+    if (httpResponseCode > 0) {
+      Serial.print("HTTP Response code: ");
+      Serial.println(httpResponseCode);
+    }
+    else {
+      Serial.print("Error code: ");
+      Serial.println(httpResponseCode);
+    }
+
+    // Free resources
+    http.end();
+  }
+  else {
+    Serial.println("WiFi Disconnected");
   }
 
-  // Create JSON payload
-  String payload = "{\"api_key\":\"" + String(API_KEY) + "\",";
-  payload += "\"sensor\":\"DHT11\",";
-  payload += "\"location\":\"Living Room\",";
-  payload += "\"value1\":\"" + String(temperature) + "\",";
-  payload += "\"value2\":\"" + String(humidity) + "\",";
-  payload += "\"value3\":\"\"}";
-
-  // Send data to API endpoint
-  HTTPClient http;
-  http.begin(API_ENDPOINT);
-  http.addHeader("Content-Type", "application/json");
-
-  int httpResponseCode = http.POST(payload);
-  if (httpResponseCode > 0) {
-    Serial.print("HTTP Response code: ");
-    Serial.println(httpResponseCode);
-    String response = http.getString();
-    Serial.println(response);
-  } else {
-    Serial.print("Error sending HTTP request: ");
-    Serial.println(httpResponseCode);
-  }
-
-  http.end();
-
-  delay(5000);  // Delay for 5 seconds before sending the next data
+  // Send an HTTP POST request every hour
+  delay(10000);
 }
